@@ -111,6 +111,19 @@ class MistralLarge4ModelTest(VLMModelTest, unittest.TestCase):
     # The DSA indexer runs under `torch.no_grad`
     test_all_params_have_gradient = False
 
+    def test_lerope_training(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = MistralLarge4ForConditionalGeneration(config).to(torch_device).train()
+        alpha = model.model.language_model.rotary_emb.alpha
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        before = alpha.detach().clone()
+        model(**inputs, labels=inputs["input_ids"], use_cache=False).loss.backward()
+        self.assertIsNotNone(alpha.grad)
+        self.assertTrue(torch.isfinite(alpha.grad).all())
+        self.assertGreater(alpha.grad.norm().item(), 0)
+        optimizer.step()
+        self.assertFalse(torch.equal(before, alpha))
+
     def _check_past_key_values_for_generate(self, batch_size, past_key_values, seq_length, config):
         # KV-shared layers attend to the cache of their source layer and leave their own cache layer empty, and NoPE
         # layers cache an empty rotary key
